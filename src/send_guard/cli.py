@@ -58,7 +58,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _emit(args, payload: dict, text: str) -> None:
-    print(json.dumps(payload) if args.json else text)
+    print(json.dumps(payload) if args.json else text, flush=True)
 
 
 def _claim(args, ledger: Ledger):

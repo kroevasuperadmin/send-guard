@@ -79,3 +79,18 @@ class CliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OutputOrderTests(unittest.TestCase):
+    def test_claim_message_is_flushed_before_the_wrapped_command_runs(self):
+        import os
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src"))
+            out = subprocess.run(
+                [sys.executable, "-m", "send_guard", "--ledger", tmp, "run", "c", "a@example.com", "--",
+                 sys.executable, "-c", "print('sent')"],
+                capture_output=True, text=True, env=env,
+            ).stdout.splitlines()
+            self.assertEqual(out, ["OK claimed", "sent"])
