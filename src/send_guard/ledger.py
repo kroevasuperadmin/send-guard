@@ -6,13 +6,20 @@ cron jobs on the same machine (and on NFS, where ``O_EXCL`` file creation is
 less trustworthy).
 """
 
+import contextlib
 import json
 import os
 import socket
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, List, Optional
+
+try:  # POSIX only; on other platforms the per-recipient lock is skipped
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None  # type: ignore
 
 from .keys import entry_name, normalise_recipient, validate_campaign
 
@@ -57,3 +64,38 @@ class Ledger:
         }
         (path / "claim.json").write_text(json.dumps(meta) + "\n", encoding="utf-8")
         return Claim(campaign, recipient, path)
+
+    def recent_entries(self, recipient: str, days: float) -> List[Path]:
+        """Entries for ``recipient`` from ANY campaign newer than ``days`` days.
+
+        Matches both directory claims and plain files, so ledgers written by
+        older tooling keep blocking.
+        """
+        recipient = normalise_recipient(recipient)
+        if not self.dir.is_dir():
+            return []
+        cutoff = time.time() - days * 86400
+        suffix = f"__{recipient}"
+        hits = []
+        for child in self.dir.iterdir():
+            if child.name.endswith(suffix) and child.stat().st_mtime > cutoff:
+                hits.append(child)
+        return sorted(hits)
+
+    @contextlib.contextmanager
+    def lock(self) -> Iterator[None]:
+        """Serialise the look-back + claim step across processes.
+
+        Two campaigns claiming the same recipient at the same instant would
+        otherwise both pass the look-back before either created its claim.
+        """
+        self.dir.mkdir(parents=True, exist_ok=True)
+        if fcntl is None:  # pragma: no cover
+            yield
+            return
+        with open(self.dir / ".lock", "a") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
