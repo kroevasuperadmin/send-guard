@@ -97,3 +97,17 @@ class CommandCheckTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AuditLogTests(unittest.TestCase):
+    def test_every_decision_is_logged(self):
+        import json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Ledger(Path(tmp))
+            g = Guard(ledger)
+            g.acquire("c", "ada@example.com")
+            g.acquire("c", "ada@example.com")
+            lines = [json.loads(x) for x in (Path(tmp) / "guard.log").read_text().splitlines()]
+            self.assertEqual([x["event"] for x in lines], ["CLAIMED", "LEDGER_HIT"])
+            self.assertEqual(lines[0]["recipient"], "ada@example.com")

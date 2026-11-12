@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Callable, List, Optional
 
 from .keys import normalise_recipient, validate_campaign
+from . import log
 from .ledger import Claim, Ledger
 
 DEFAULT_DAYS = 7.0
@@ -67,8 +68,14 @@ class Guard:
         self.days = days
 
     def acquire(self, campaign: str, recipient: str) -> Decision:
+        """Run the full guard and record the outcome in the ledger's audit log."""
         campaign = validate_campaign(campaign)
         recipient = normalise_recipient(recipient)
+        decision = self._decide(campaign, recipient)
+        log.append(self.ledger.dir, decision.status.name, campaign, recipient, decision.message)
+        return decision
+
+    def _decide(self, campaign: str, recipient: str) -> Decision:
 
         with self.ledger.lock():
             recent = self.ledger.recent_entries(recipient, self.days)
@@ -107,6 +114,7 @@ class Guard:
     def release(self, claim: Claim) -> None:
         """Give a claim back. Only for the case where nothing was sent."""
         shutil.rmtree(claim.path, ignore_errors=True)
+        log.append(self.ledger.dir, "RELEASED", claim.campaign, claim.recipient)
 
 
 def command_check(command: str, timeout: float = 300.0) -> Check:
