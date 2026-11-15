@@ -48,3 +48,22 @@ class ClaimTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _try_guard(args):
+    directory, campaign, recipient = args
+    from send_guard.guard import Guard
+
+    return Guard(Ledger(directory)).acquire(campaign, recipient).ok
+
+
+class CrossCampaignRaceTests(unittest.TestCase):
+    def test_two_campaigns_racing_for_one_recipient_yield_one_winner(self):
+        # Without the ledger lock, both campaigns can pass the look-back before
+        # either has created its claim.
+        for round_ in range(5):
+            with tempfile.TemporaryDirectory() as tmp:
+                args = [(tmp, f"campaign-{i}", "ada@example.com") for i in range(12)]
+                with multiprocessing.Pool(6) as pool:
+                    results = pool.map(_try_guard, args)
+                self.assertEqual(sum(results), 1, f"round {round_}: {results}")
